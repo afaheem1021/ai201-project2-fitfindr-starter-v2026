@@ -224,7 +224,8 @@ def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
             "They haven't told us what's in their closet. Give 2 outfit ideas "
             "for this piece, describing the kinds of pieces that would go with "
             "it (type of bottoms/top, shoes, maybe one accessory). One line "
-            "each, starting with 'Outfit 1:' and 'Outfit 2:'."
+            "each, starting with 'Outfit 1:' and 'Outfit 2:'. Reply with only "
+            "those two lines, no intro."
         )
     else:
         closet = "\n".join(
@@ -239,7 +240,7 @@ def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
             "Give 2 outfits that pair the new item with pieces from their closet. "
             "Only use pieces from the list above and call them by the name "
             "they're listed under. One line each, starting with 'Outfit 1:' and "
-            "'Outfit 2:'."
+            "'Outfit 2:'. Reply with only those two lines, no intro."
         )
 
     response = generate(prompt, system=system).strip()
