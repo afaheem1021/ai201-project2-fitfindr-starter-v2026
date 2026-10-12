@@ -218,6 +218,26 @@ I used Claude for this project, mostly to write the first drafts of the tools an
 
 One smaller thing: the first version of `suggest_outfit` came back with "Hey babe! That butterfly baby tee is a total thrift score..." before the actual outfits. Fun but not what I asked for, so I added "Reply with only those two lines, no intro" to both versions of the prompt.
 
+**Unit 4**
+
+**Moment 3**
+
+- *What I asked for:* Milestone 2 says to paste all three failure messages into a model and ask "for each one, tell me what I would try next as a user who can't see the code", so I did, with the empty search, empty wardrobe and bad-key messages.
+- *What came back:* The empty search one was fine. For the empty wardrobe it said it "does not report an error" and there was nothing to try, which made sense, it just looked like normal outfits. For the bad key it said I couldn't fix it as a user because editing `.env` and making a new API key are developer things.
+- *What I changed:* The empty wardrobe outfits now start with "You don't have any wardrobe items saved, so these are general ideas, not pieces from your closet", so it's obvious why it's naming clothes you don't own. And the model-down message now ends with "If someone else set this app up for you, this isn't something you did wrong - let them know the model key isn't working". I kept the `.env` part because for this app the person running it is usually the one who set it up.
+
+**Moment 4**
+
+- *What I asked for:* I gave the model criterion 4, the five fit cards and my MET (5/5) verdict, and used the "argue the opposite verdict as strongly as you can" prompt from Milestone 4.
+- *What came back:* It said it should be NOT MET (0/5) for two reasons. First, the cards are a "template in disguise", and it listed "Found this gem on poshmark for only $42", "Snagged it on poshmark for $42" etc. Second, it said the model "hallucinated" the oversized grey crewneck and khaki trousers.
+- *What I changed:* The first point was right. I'd already started counting that sentence (28/45 cards) and it's what made me write the revised criterion 4. The second point was wrong: the crewneck and the khakis are actually in the example wardrobe, the outfit tool is supposed to use them. I also didn't change the verdict on the original criterion to 0/5, because the original is written as price + platform + length + different openings, and all five really do pass that. Changing the verdict on a criterion that was met as written felt like the wrong move. Writing the revision underneath and scoring both seemed more honest.
+
+**Moment 5**
+
+- *What I asked for:* I had Claude write `check_run.py` to score the run log against my criteria, since `run_eval.py` leaves PASS/FAIL blank and there were 50 tries.
+- *What came back:* It worked, but the criterion 3 check got the first search result's title by splitting the trace line on commas. That works for "90s Track Jacket — Navy/White Stripe" but would've broken on "Denim Jacket — Light Wash, Cropped", which has a comma in it, and it would've been reported as a state failure that never happened.
+- *What I changed:* I switched it to check that the results list starts with the selected title instead of splitting. And I still read every card and outfit in both logs myself instead of only trusting the script, which is how I found the comma/"dark wash jacket" thing and the "Hey babe" intros. The script would never have caught those.
+
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
      Don't fill these in during unit 3.
@@ -532,11 +552,18 @@ Also worth saying: try 4 above passes my regex but "Score secured on poshmark fo
 
 ## What's Still Broken
 
-<!-- For each criterion still missed: what you'd do, and why you stopped where
-     you did. "I ran out of time" is fine if it's true. Pretending nothing is
-     left is not. -->
+**Revised criterion 4, still MISSED (3/5).** What I'd try next is taking the price and platform out of the model's hands completely: have the model write just the caption about the piece and the outfit, and have `create_fit_card` add a last line itself like `$42 · poshmark`. That would make the price and platform right 100% of the time (fixing the 40/45 regression too) and there'd be no reason for the model to write the "snagged it on" sentence at all. The downside is it reads a little less like a real post, which is what criterion 4 is about, so I'd want to test that before calling it better. I stopped where I did because the rules for this unit say one improvement, and I'd rather have one change I can actually measure than two I can't tell apart.
 
+**Original criterion 4 got worse (5/5 -> 4/5).** Still MET, but my change caused it, so I'm counting it as broken. Same fix as above would cover it.
 
+**My stock-sentence check is too narrow.** It only knows six verbs (snagged, found, got, copped, scored, grabbed), so "Score secured on poshmark for $42" slips through as a pass. If I keep the revised criterion I'd widen the check to "price and platform in the same sentence, any wording", which was 44/45 before and 29/45 after.
+
+**Things none of my criteria test, that I'd write criteria for next:**
+- `suggest_outfit` sometimes ignores "no intro" ("Hey babe, grab that tee!"). It was 2/45 before and 0/45 after, and I didn't touch that prompt, so it's random. I'd drop the "friendly stylist who's really into thrifting" persona from the system prompt, or just keep the lines that start with "Outfit" in code.
+- The wardrobe item "Baggy straight-leg jeans, dark wash" has a comma in its name, so the model sometimes reads "dark wash" as its own thing and a fit card mentioned a "dark wash jacket" the user doesn't own. Formatting wardrobe names in quotes in the prompt would probably fix it.
+- Search ranking: `'vintage graphic tee'` picks the Y2K butterfly baby tee over the actual Graphic Tee, `'leather bomber size M under $50'` returns a braided leather belt, and `'t-shirt'` doesn't find any tees. Criterion 1 only used one query I already knew worked, so it couldn't catch any of this. I'd rewrite it with queries I haven't tried before.
+
+**Smaller stuff:** every search now starts the MCP server up (~0.25s each), and the empty branch can do up to 4 searches, so an empty search takes about a second now instead of being instant. And `trace.step()` prints every time, not only with `--trace`, so normal runs show the whole trace too. I left that alone since it's how the starter's `trace.py` works.
 
 <!-- ═════════════════════════════════════════════════════════════════════
 
