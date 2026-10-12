@@ -85,6 +85,23 @@ models sometimes just drop a detail or ramble even when the prompt says not to.
 The "not the same first 5 words" part is there so I'd notice if it turned into
 a template.
 
+> **Revised in unit 4:** Same run (one query, 5 times, cache off), same 4 of 5
+> target. A card passes if it has the exact price, the platform name, is 280
+> characters or less, AND it doesn't use the stock "[snagged / found / got /
+> copped / scored / grabbed] it on [platform] for $[price]" sentence. I check
+> that last part with a regex in `check_run.py::uses_stock_sentence`: one of
+> those verbs, then "on <platform>" within 40 characters, then a `$` price
+> within 15 more, all in the same sentence.
+>
+> **Why revised:** my reason above says the first-5-words check is there to
+> catch the cards turning into a template. They did turn into a template, just
+> not at the start. In the before run 4 of the 5 cards for this query had
+> "Found this gem on poshmark for only $42" / "Snagged it on poshmark for $42"
+> in the middle, and across every scenario it was 28 of 45 cards. The opening
+> check passed all of them because it was looking in the wrong place, so it
+> measured the wrong thing. The original line above stays as it was, and I
+> scored both versions.
+
 ---
 
 ## 5. The price ceiling actually gets respected

@@ -326,33 +326,30 @@ Criterion 5, phrasing 2 (`'denim jacket below 50'`), parse and search steps:
 
 ## Verdicts and Diagnoses
 
-<!-- MET or MISSED per criterion against LAST UNIT's target, plus a sentence on
-     how you decided.
-
-     Then, for every miss: which of the four places it happened — a tool, the
-     loop's branch, the session, or the model's output — AND the mechanism.
-
-     Not a diagnosis:  "The fit card was bad."
-     A diagnosis:      "The fit card criterion missed on 2 of 5 items. Both had
-                        an empty brand field. My prompt puts the brand in the
-                        first sentence, so the card opened with a blank and read
-                        like a fragment. The tool worked; the prompt assumed a
-                        field that isn't always there."
-
-     Look for a pattern. Three misses on the same tool is one problem, not
-     three. -->
-
 | # | Criterion | Target | Verdict | How I decided |
 |---|---|---|---|---|
-| 1 |  |  |  |  |
-| 2 |  |  |  |  |
-| 3 |  |  |  |  |
-| 4 |  |  |  |  |
-| 5 |  |  |  |  |
+| 1 | Matching query completes all 3 tools + fit card | 4 of 5 | MET (5/5) | All 5 traces have search, suggest_outfit and create_fit_card steps and a non-empty fit card. No early stops, no crashes. |
+| 2 | Impossible query stops before suggest_outfit, names what to change | 5 of 5 | MET (5/5) | All 5 stopped after the search, no suggest_outfit step in any trace, fit_card stayed None, and the message says "it's the words" and gives words to try. |
+| 3 | Same item id all the way through | 5 of 5 | MET (5/5) | lst_004 was the first search result, selected_item, and the `new_item` id in both the suggest_outfit and create_fit_card steps on all 5 tries. |
+| 4 | Fit card has $price + platform, 280 chars or less | 4 of 5 | MET (5/5) | All 5 had `$42` and `poshmark`, longest was 222 chars, and the 5 openings were all different. |
+| 4 (revised) | Same, plus no stock "snagged it on poshmark for $42" sentence | 4 of 5 | **MISSED (1/5)** | Only try 1 passed. Tries 2-5 had "Found this gem on poshmark for only $42", "Snagged this gem on poshmark for just $42", "Snagged it on poshmark for $42", "found on poshmark for only $42". |
+| 5 | Price ceiling parsed and respected, 5 phrasings | 5 of 5 | MET (5/5) | Every phrasing parsed to the number I typed, and the most expensive result was under it every time (e.g. below 50 -> $24-$45). Same on all 25 runs. |
 
 **Diagnoses**
 
+*Criterion 4 (revised), missed 1/5.* Where: the model's output, in `tools.py::create_fit_card`. The tool itself works and the loop passes it the right item every time (criterion 3 shows that). The mechanism is the prompt. One of my rules is "say the price exactly as $42 and the platform name 'poshmark', once each", so the model treats price and platform as two facts it has to slot in. The easiest way to do both in a caption is the sentence every thrift post already uses, "snagged it on poshmark for just $42". It's not about this one jacket either: across the whole before run 28 of 45 cards had that sentence, on every item (baby tee, track jacket, cardigan, sneakers, band tee...). So it's one problem in one prompt, not nine.
 
+The funny part is I sort of caused this in unit 3. Back then the cards opened with "Scored this 2003 tour bootleg tee on depop for just $24", so I banned "Scored" / "Just thrifted" as openers. That fixed the opening and my first-5-words check, but the same phrase just moved to the second sentence where my criterion wasn't looking. That's also why the original criterion 4 passed so easily.
+
+**I didn't miss any of the original five, so being honest about my targets:**
+- Criteria 2, 3 and 5 test code that doesn't touch the model (an `if not results`, reading a dict out of the session, a regex and a `<=`). Once the code is right they pass every single time, which is what happened, 5/5 and 25/25. They're good at catching a bug if I break something later, but they couldn't really tell me anything new this time.
+- Criterion 1 was low. 4 of 5 on a query I'd already checked against the data is pretty safe. The miss I was expecting was from my keyword search on a weird phrasing, and my test only used the one phrasing I knew worked. If I tightened it I'd make it 5 different matching queries I haven't tried before.
+- Criterion 4 was the loosest. The cards were 154-232 characters against a 280 limit, and all 45 cards in the run had the price and the platform. That's why it's the one I revised.
+
+**Things I saw that none of my criteria cover** (not misses, but they're real):
+- `suggest_outfit` ignored "no intro" 2 times out of 45 and started with "Hey babe, grab that tee! It's such a fun find..." and "Hey friend! Those chunky platform sneakers...". I think the system prompt calling it a "friendly stylist who's really into thrifting" pulls it toward that.
+- One wardrobe item is named "Baggy straight-leg jeans, dark wash", with a comma in the name. The outfit lists it as "...Baggy straight-leg jeans, dark wash, Vintage black denim jacket...", and in one card that turned into "my baggy jeans, dark wash jacket, and chunky sneakers", which is a jacket the user doesn't own.
+- For `'vintage graphic tee under $30'` the agent picks the Y2K butterfly baby tee over the actual "Graphic Tee — 2003 Tour Bootleg Style", because the baby tee has both "vintage" and "graphic tee" in its tags. It's not wrong exactly, but it's probably not what I'd want.
 
 ---
 

@@ -142,6 +142,30 @@ def c5(t, scenario):
     return True, f"max_price={parsed:g}, results ${m.group(1)}-${top:g}"
 
 
+# Revised criterion 4 (unit 4, see criteria.md): also no stock
+# "snagged it on depop for $24" sentence.
+STOCK = re.compile(
+    r"\b(snagged|found|got|copped|scored|grabbed)\b[^.!?]{0,40}"
+    r"\bon (depop|poshmark|thredup)\b[^.!?]{0,15}\$\d+",
+    re.I,
+)
+
+
+def uses_stock_sentence(card: str):
+    m = STOCK.search(card or "")
+    return m.group(0) if m else None
+
+
+def c4_revised(t, scenario):
+    ok, why = c4(t, scenario)
+    if not ok:
+        return ok, why
+    stock = uses_stock_sentence(t["fit_card"])
+    if stock:
+        return False, f"stock sentence: '{stock}'"
+    return True, why + ", no stock sentence"
+
+
 CHECKS = {1: c1, 2: c2, 3: c3, 4: c4, 5: c5}
 
 
@@ -171,6 +195,12 @@ def main():
         print(f"  -> {sum(results)}/{len(results)}  row: "
               + " | ".join("PASS" if r else "FAIL" for r in results))
         if number == 4:
+            revised = [c4_revised(t, scenario) for t in tries]
+            print("  revised criterion 4:")
+            for i, (ok, why) in enumerate(revised, 1):
+                print(f"    try {i}: {'PASS' if ok else 'FAIL'}  {why}")
+            print(f"  -> {sum(ok for ok, _ in revised)}/{len(revised)}  row: "
+                  + " | ".join("PASS" if ok else "FAIL" for ok, _ in revised))
             openings = [opening(t["fit_card"] or "") for t in tries]
             same = len(set(openings)) == 1
             print(f"  openings ({'ALL THE SAME - fails' if same else 'not all the same - ok'}):")
@@ -178,5 +208,27 @@ def main():
                 print(f"     {o}")
 
 
+def stock_count(report: dict) -> None:
+    """How many fit cards in the WHOLE run use the stock sentence."""
+    cards = [t["fit_card"] for tries in report.values() for t in tries if t["fit_card"]]
+    hits = sum(bool(uses_stock_sentence(c)) for c in cards)
+    print(f"\nstock 'snagged it on <platform> for $X' sentence, every card in the run: {hits}/{len(cards)}")
+
+
+def intro_count(path: Path) -> None:
+    """Outfit suggestions with chatter outside the 'Outfit 1:' / 'Outfit 2:' lines."""
+    text = path.read_text(encoding="utf-8").split("## What actually happened", 1)[1]
+    outfits = re.findall(r"Outfit suggestion:\n\n```\n(.*?)\n```", text, re.S)
+    note = "You don't have any wardrobe items saved, so these are general ideas, not pieces from your closet:"
+    extra = 0
+    for o in outfits:
+        lines = [l for l in o.replace(note, "").split("\n") if l.strip()]
+        if any(not l.startswith("Outfit") for l in lines):
+            extra += 1
+    print(f"outfit suggestions with an intro or extra lines: {extra}/{len(outfits)}")
+
+
 if __name__ == "__main__":
     main()
+    stock_count(parse_report(Path(sys.argv[1])))
+    intro_count(Path(sys.argv[1]))
