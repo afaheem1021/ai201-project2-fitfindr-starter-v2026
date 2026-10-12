@@ -25,9 +25,13 @@ Given a query that matches at least one listing, the agent completes all three
 tool calls and returns a fit card — in at least 4 of 5 tries.
 
 **Why this target:**
-<!-- Why 4 of 5 and not 5 of 5? Something about your search, probably —
-     "my search is a plain keyword match and some phrasings will miss" is a
-     real answer. -->
+My search is just keyword matching, no synonyms. Somebody who types "t-shirt"
+when the listing says "tee", or "sneaks" for sneakers, is going to get nothing
+back even though the item is right there. Two of the three calls also go to the
+model, and a rate limit hiccup or an empty response could break a run. So I
+think 1 miss out of 5 is honest. I didn't go lower than 4 because the example
+queries were literally checked against the data, so if they fail more than once
+something is actually broken.
 
 ---
 
@@ -37,66 +41,69 @@ Given a query that matches no listings, the agent stops before calling
 `suggest_outfit` and returns a message naming what to change — 5 of 5 tries.
 
 **Why this target:**
-<!-- Why is 5 of 5 reasonable here when criterion 1 isn't? What's different
-     about this path? -->
+This path doesn't touch the model at all. It's a plain `if not results:` in
+my code, so it should either work every time or never. There's no randomness
+in it, so anything less than 5 of 5 means the branch is broken, not unlucky.
+"Names what to change" means the message mentions at least one of the price,
+the size, or the search words, not just "No results".
 
 ---
 
-## 3. Something about state
+## 3. The item search found is the item the other two tools get
 
-<!-- YOU WRITE THIS ONE.
-
-     How would you know that the item your search found is the same item the
-     next tool received? Name something countable or observable.
-
-     This is the criterion people find hardest, because state failure doesn't
-     look like state failure — it looks like a tool problem. Something that
-     compares session["selected_item"] against what actually reached
-     suggest_outfit is the shape you're after. -->
-
-
+For a query that matches, `session["selected_item"]["id"]` is the same as
+`session["search_results"][0]["id"]`, AND the same id shows up as the item
+logged for both `suggest_outfit` and `create_fit_card` in
+`session["tool_calls"]` — 5 of 5 tries. I'll check it with a little script that
+prints the four ids side by side; they all have to be identical.
 
 **Why this target:**
-
-
+Same as criterion 2, there's no model involved in passing the item along, it's
+just reading a dict out of the session. If the ids ever don't match, that's a
+bug in my loop (like grabbing the wrong index or a stale variable), not
+randomness, so I'm not giving it any slack. I log the ids in `tool_calls`
+because otherwise I'd only be checking that the session field exists, not that
+the tool really received it.
 
 ---
 
-## 4. Something about the fit card
+## 4. The fit card reads like a real post
 
-<!-- YOU WRITE THIS ONE.
-
-     The fit card calls a model, so the same input can produce different words
-     each time. That's not a bug — it's the nature of the tool. So what would
-     make it acceptable?
-
-     Think about what you'd actually be unhappy to see. A caption that never
-     mentions the price? Two different items producing the same opening
-     sentence? A card longer than a caption anyone would post? Any of those can
-     be turned into a number. -->
-
-
+Run the same matching query 5 times with the cache off. A fit card counts as
+good if all of these are true: it contains the item's exact price written like
+`$24` (or `$24.00`), it contains the platform name (depop / thredUp / poshmark,
+case doesn't matter), and it's 280 characters or less (so it'd fit in a tweet).
+At least 4 of the 5 cards have to pass. On top of that, the 5 cards can't all
+start with the same first 5 words.
 
 **Why this target:**
-
-
+The model writes these at temperature 0.9 so the wording will be different
+every time, which is fine, I don't care about the exact words. What I care
+about is that it doesn't forget the two facts that make it useful (price and
+where to buy it) and doesn't turn into a paragraph. I'm allowing 1 miss because
+models sometimes just drop a detail or ramble even when the prompt says not to.
+The "not the same first 5 words" part is there so I'd notice if it turned into
+a template.
 
 ---
 
-## 5. Your choice
+## 5. The price ceiling actually gets respected
 
-<!-- YOU WRITE THIS ONE TOO.
-
-     Pick something you actually care about getting right. Speed, the empty
-     wardrobe path, what happens when the model can't be reached, whether the
-     search respects a price ceiling — anything, as long as it names a number
-     or an observable outcome. -->
-
-
+I'll run 5 queries that each say the price a different way:
+`'graphic tee under $30'`, `'denim jacket below 50'`, `'cardigan max $40'`,
+`'platform sneakers less than $60'`, `'band tee $20 or less'`. For every one,
+`session["parsed"]["max_price"]` has to be the number I typed, and every
+listing in `session["search_results"]` has to have a price at or under it.
+5 of 5 queries.
 
 **Why this target:**
-
-
+The scary failure here is a silent one: if my regex doesn't catch a phrasing,
+max_price ends up None and the search just ignores the budget with no error.
+That's the same thing as the PowerShell `$30` problem in the instructions. The
+filter itself is a simple `<=`, so once the price is parsed it can't really be
+wrong, which is why it's 5 of 5. The part that can fail is the parsing, which
+is why I test five different ways of saying it instead of the same query five
+times.
 
 ---
 
