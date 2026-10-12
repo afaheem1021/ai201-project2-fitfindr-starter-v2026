@@ -470,31 +470,63 @@ Did anything behave differently? Not that I could find. I ran `'graphic tee'` un
 
 ## The Improvement
 
-<!-- What you changed, why your diagnosis pointed at it, and the after-run in
-     the same table format. One change, measured properly.
+**What I changed:** One line of the `create_fit_card` prompt in `tools.py`. It used to say:
 
-     `python run_eval.py --label after` -->
+```
+- say the price exactly as $42 and the platform name 'poshmark', once each
+```
 
-**What I changed:**
+Now it says:
 
-**Which failure it was meant to fix:**
+```
+- say the price exactly as $42 once and the platform name 'poshmark' once, but put them in DIFFERENT sentences. Don't write the usual 'snagged/found/got it on poshmark for $42' line, every thrift caption has that one
+```
+
+Nothing else changed: same search, same loop, same outfit prompt, same temperature, same scenarios. I didn't test the new wording a few times first to tune it, I just made the change and ran the whole thing (`python run_eval.py --label after`, 90 model calls, cache off). The log is [results/run_2026-10-11_2217_after.md](results/run_2026-10-11_2217_after.md).
+
+**Which failure it was meant to fix:** the revised criterion 4 miss. My diagnosis was that asking for the price and the platform as a pair is what makes the model reach for "snagged it on poshmark for $42", so I split them up.
 
 ### Run Log — After
 
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. Matching query completes all three tools and returns a fit card | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. Impossible query stops before suggest_outfit, message names what to change | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. Same item id in search_results[0], selected_item, suggest_outfit and create_fit_card | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. Fit card has exact price + platform and is 280 chars or less (and the 5 don't all open the same) | 4 of 5 | FAIL | PASS | PASS | PASS | PASS | MET (4/5) |
+| 4 (revised). Same, plus no stock "snagged it on poshmark for $42" sentence | 4 of 5 | FAIL | PASS | FAIL | PASS | PASS | **MISSED (3/5)** |
+| 5. Price ceiling parsed right and respected, 5 phrasings | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
 
-**Did it help, and how do I know:**
+Side by side, just the rows that moved:
 
-<!-- If it made things worse, say that. Honestly reported, that earns full
-     credit and is more interesting than one that worked. -->
+| | Before | After |
+|---|---|---|
+| 4. original | MET (5/5) | MET (4/5) |
+| 4. revised | MISSED (1/5) | MISSED (3/5) |
 
+And across all 45 fit cards in each run, not just criterion 4's query (counted with `check_run.py` plus a quick script over both logs):
 
+| Across every card in the run | Before | After |
+|---|---|---|
+| Uses the stock "snagged/found/got it on X for $Y" sentence | 28/45 | 4/45 |
+| Price and platform in the same sentence, any wording | 44/45 | 29/45 |
+| Passes revised criterion 4 | 17/45 | 36/45 |
+| Passes original criterion 4 (price + platform + 280 chars) | 45/45 | 40/45 |
+
+The 5 cards that failed the original check after the change: two left out the platform ("Best $42 addition to my closet yet!" never says poshmark), one left out the price ("Scored this gem on depop and honestly haven't taken it off since"), and two went over 280 characters (294 and 298).
+
+Criterion 4 try 1 after, the one that dropped the platform:
+```
+This light wash cropped denim jacket gives off such a cool streetwear vibe thrown over an oversized grey crewneck. I love how it looks with wide-leg khaki trousers and chunky boots. Best $42 addition to my closet yet! 🧥✨ #streetwear #thriftstyle #denimjacket
+```
+And try 4, which passes the revised one:
+```
+Cropped light wash denim is officially my new daily uniform. Paired it with a white tank and baggy jeans today. Score secured on poshmark for $42. 👖✨ #denimjacket #ootd #streetwear
+```
+
+**Did it help, and how do I know:** Partly. It did what it was aimed at: the stock sentence went from 28 of 45 cards to 4 of 45, and revised criterion 4 went from 1/5 to 3/5. But it still misses the 4 of 5 target, and it cost me something I didn't have a problem with before. Every card in the before run had the price and the platform and fit in 280 characters (45/45), and after the change 5 cards broke that (40/45), so the original criterion 4 dropped from 5/5 to 4/5. My guess is that splitting price and platform into separate sentences makes the caption longer, and gives the model a chance to forget one of them because they're not tied together anymore. So I traded a style problem for a small accuracy problem, and the accuracy one matters more to someone actually trying to buy the thing.
+
+Also worth saying: try 4 above passes my regex but "Score secured on poshmark for $42" is pretty much the same sentence. My regex only knows six verbs. So 4/45 is probably a bit better than the truth.
 
 ---
 

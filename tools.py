@@ -306,8 +306,12 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
         f"How I'm styling it: {outfit.strip()}\n\n"
         "Rules:\n"
         "- 2 to 4 short sentences, under 280 characters total\n"
-        f"- say the price exactly as {price} and the platform name "
-        f"'{new_item['platform']}', once each\n"
+        # unit 4 improvement: price and platform in the SAME sentence is what
+        # produced "snagged it on depop for just $24" on 28 of 45 cards
+        f"- say the price exactly as {price} once and the platform name "
+        f"'{new_item['platform']}' once, but put them in DIFFERENT sentences. "
+        f"Don't write the usual 'snagged/found/got it on {new_item['platform']} "
+        f"for {price}' line, every thrift caption has that one\n"
         "- sound like a real person posting their fit, casual, not like a "
         "product description\n"
         "- pick ONE outfit from the styling notes, don't list both\n"
