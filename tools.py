@@ -244,6 +244,13 @@ def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
         )
 
     response = generate(prompt, system=system).strip()
+    if response and not items:
+        # found in unit 4: with no note, the user can't tell why the outfits
+        # name clothes they don't own
+        response = (
+            "You don't have any wardrobe items saved, so these are general "
+            "ideas, not pieces from your closet:\n" + response
+        )
     if not response:
         # the model has come back empty on me once or twice; don't pass "" on
         return f"Wear the {new_item.get('title', 'piece')} with simple basics and let it be the focus."

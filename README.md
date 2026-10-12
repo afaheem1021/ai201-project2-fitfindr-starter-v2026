@@ -297,17 +297,102 @@ that produced it:
      the same length, your branch isn't working — and this is the fastest way
      anyone will ever find that out. -->
 
+Every step calls `trace.step()` inside `agent.py::run_agent` (and inside `_no_results_message` for the extra searches). The search steps say "(via MCP)" because that's the tool that goes through `mcp_server.py` now.
+
 **Happy path**
 
 ```
+$ python app.py ask 'vintage graphic tee under $30, size L' --trace
+[1] parse_query
+      in:  vintage graphic tee under $30, size L
+      out: {'description': 'vintage graphic tee', 'size': 'L', 'max_price': 30.0}
+[2] search_listings (via MCP)
+      in:  {'description': 'vintage graphic tee', 'size': 'L', 'max_price': 30.0}
+      out: 5 items: Graphic Tee — 2003 Tour Bootleg Style, Vintage Band Tee — Faded Grey, Vintage Graphic Hoodie — Faded Black … +2 more
+      →    branch: 5 results, selected_item = lst_006, going to suggest_outfit
+[3] suggest_outfit
+      in:  new_item=lst_006 (Graphic Tee — 2003 Tour Bootleg Style), wardrobe=10 items
+      out: Outfit 1: Graphic Tee paired with baggy straight-leg jeans, black combat boots, and black crossbody bag. Outfi…
+[4] create_fit_card
+      in:  new_item=lst_006, outfit=<from suggest_outfit>
+      out: Paired this 2003 tour tee with baggy jeans and combat boots. Total steal on depop for just $24. 🎸  #thriftfind…
+      →    done
 
+  Found:    Graphic Tee — 2003 Tour Bootleg Style — $24.0 on depop
+
+  Outfit:   Outfit 1: Graphic Tee paired with baggy straight-leg jeans, black combat boots, and black crossbody bag.
+Outfit 2: Graphic Tee paired with wide-leg khaki trousers, vintage black denim jacket, and chunky white sneakers.
+
+  Fit card: Paired this 2003 tour tee with baggy jeans and combat boots. Total steal on depop for just $24. 🎸
+
+#thriftfind #ootd #streetwear
+
+0 model calls this session, 2 served from cache
 ```
+
+(This one says "served from cache" because I'd already run the same query while building. The eval runs below have the cache off.)
 
 **Empty search**
 
 ```
+$ python app.py ask 'graphic tee size XS under $10' --trace
+[1] parse_query
+      in:  graphic tee size XS under $10
+      out: {'description': 'graphic tee', 'size': 'XS', 'max_price': 10.0}
+[2] search_listings (via MCP)
+      in:  {'description': 'graphic tee', 'size': 'XS', 'max_price': 10.0}
+      out: [] (empty)
+      →    branch: empty, working out what to tell the user, then stopping
+[3] search_listings (via MCP)
+      in:  {'description': 'graphic tee', 'size': None, 'max_price': None}
+      out: 7 items: Graphic Tee — 2003 Tour Bootleg Style, Y2K Baby Tee — Butterfly Print, Vintage Band Tee — Faded Grey … +4 more
+      →    re-search with a filter dropped, to see which one emptied it
+[4] search_listings (via MCP)
+      in:  {'description': 'graphic tee', 'size': None, 'max_price': 10.0}
+      out: [] (empty)
+      →    re-search with a filter dropped, to see which one emptied it
+[5] search_listings (via MCP)
+      in:  {'description': 'graphic tee', 'size': 'XS', 'max_price': None}
+      out: [] (empty)
+      →    re-search with a filter dropped, to see which one emptied it
+[6] stop
+      out: I couldn't find 'graphic tee' in size XS under $10. You could loosen both the size and the price. Nothing fits…
+      →    suggest_outfit never called
 
+  I couldn't find 'graphic tee' in size XS under $10. You could loosen both the size and the price. Nothing fits both, the closest thing is the Graphic Tee — 2003 Tour Bootleg Style in size L for $24.
+
+0 model calls this session
 ```
+
+The empty one never gets to `suggest_outfit`. It does 3 extra searches (all through MCP) to work out which filter emptied it, then stops at step 6 with 0 model calls.
+
+**The three failure modes, triggered on purpose**
+
+1. *Empty search.* `python app.py ask 'designer ballgown size XXS under $5'` stops before suggest_outfit and says: "Nothing in the listings matches 'designer ballgown' in size XXS under $5, and nothing matches 'designer ballgown' even with no size or price limit, so it's the words. Try naming the type of piece (tee, jacket, jeans, boots, cardigan) or a style (vintage, y2k, grunge, 90s)." This already worked from last unit, nothing to add.
+
+2. *Empty wardrobe.* `python app.py ask 'denim jacket under $50' --empty-wardrobe` didn't crash and didn't come back empty, it gave general outfit ideas (wide-leg black trousers, floral slip dress...). This was also already handled in `suggest_outfit`. The one thing I changed after testing it (see How I Used AI) is that it now says up front that these are general ideas, because otherwise it looks like the app made up clothes you own:
+   ```
+   Outfit:   You don't have any wardrobe items saved, so these are general ideas, not pieces from your closet:
+   Outfit 1: Pair it with high-waisted wide-leg black trousers, a simple white t-shirt, chunky loafers, and a minimalist leather tote bag.
+   Outfit 2: Throw it over a floral midi slip dress with beat-up canvas sneakers and a nylon shoulder bag for a great nineties mix.
+   ```
+
+3. *Model unavailable.* I changed the last character of my key and ran a query I'd never asked before (`'corduroy pants under $40'`) so the cache couldn't answer it. Instead of editing `.env` and having to remember to put it back, I set the broken key just for that one command, `GEMINI_API_KEY=<key with last char changed> python app.py ask ...`, which wins over the `.env` value. Before I added a handler this is what happened:
+   ```
+   ModelUnavailable: The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.
+
+   1 model calls this session
+   ```
+   No stack trace, but only because `app.py` catches everything at the very top. `run_agent` itself crashed, the program exited with code 1, and the listing it had already found was thrown away. A run in `run_eval.py` would've just been logged as CRASHED. So I added a handler in `run_agent` that catches `ModelUnavailable` around both model steps, puts a message in `session["error"]` and stops. Now it says:
+   ```
+   [3] suggest_outfit
+         in:  new_item=lst_005
+         out: ModelUnavailable
+         →    model unreachable, stopping
+
+     Found a match, the Corduroy Wide-Leg Pants — Rust ($32 on depop), but I couldn't reach the AI model to style it or write the fit card. The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com. Your search itself worked, so once that's fixed just run the same query again. (If someone else set this app up for you, this isn't something you did wrong - let them know the model key isn't working.)
+   ```
+   I also added a handler for `MCPError` around the search, since now that search goes through a separate server process that's a new way for it to break. That one tells you to run `python mcp_server.py` on its own to see the error.
 
 **On the MCP move:** I moved `search_listings` since it's the one that doesn't call the model. In `mcp_server.py` I registered it with `@mcp.tool()` and wrote the description for someone who can't see my code (units on max_price, how size matching works, and that it returns `[]` when nothing matches). `python mcp_client.py` lists it with `description: string`, `size: string (optional)`, `max_price: number (optional)`, which matches my Tool Inventory. In `agent.py` I added a little `_search()` helper that calls `call_tool("search_listings", {...})` and swapped every search in `run_agent` over to it, including the extra searches the empty branch does to figure out which filter killed the results.
 
