@@ -63,7 +63,7 @@
 - **Inputs:** `description` (str) - the keywords, like "vintage graphic tee". `size` (str or None) - a size like "M", "8" or "W30", None means don't filter on size. `max_price` (float or None) - the price ceiling, inclusive, None means no ceiling.
 - **Returns:** A `list[dict]` of listing dicts, sorted by keyword score highest first, at most `config.SEARCH_RESULT_LIMIT` (10). Each dict is the full listing straight from the data: `id`, `title`, `description`, `category`, `style_tags`, `size`, `condition`, `price` (float), `colors`, `brand` (can be None), `platform`.
   - Size match rule: I split the listing's size into tokens on `/`, spaces and parentheses, and the size has to equal one of those tokens. So "M" matches `M`, `S/M` and `M/L` but not `XL`. A number like "8" matches `US 8` but not `US 8.5`, and "30" or "W30" both match `W30 L30`. Listings that say "One Size" count as a match for any letter size (S, M, L...) but not for a shoe or waist size.
-  - Score: a keyword hit in the title or style tags is worth 2, a hit in the description, colors or category is worth 1. Filler words ("looking", "for", "a", "the"...) are dropped before scoring.
+  - Score: a keyword hit in the title or style tags is worth 2, a hit in the description, colors or category is worth 1, and +3 if the whole phrase shows up in the title in order. Filler words ("looking", "for", "a", "the"...) are dropped before scoring, and anything that scores 0 is dropped.
 - **When it has nothing:** An empty list `[]`. Never None and never an exception.
 
 ### `suggest_outfit`
@@ -110,19 +110,48 @@ $ python app.py ask '...'
 
 **The three tools, tested one at a time**
 
-```
-$ python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30))"
+search_listings, a normal search and then the empty case:
 
 ```
+$ python -c "from tools import search_listings; print([(r['id'], r['title'], r['price'], r['size'], r['platform']) for r in search_listings('graphic tee', max_price=30)])"
+[('lst_006', 'Graphic Tee — 2003 Tour Bootleg Style', 24.0, 'L', 'depop'), ('lst_002', 'Y2K Baby Tee — Butterfly Print', 18.0, 'S/M', 'depop'), ('lst_033', 'Vintage Band Tee — Faded Grey', 19.0, 'L', 'depop'), ('lst_015', 'Vintage Graphic Hoodie — Faded Black', 26.0, 'L', 'depop'), ('lst_017', 'Mesh Long-Sleeve Top — Black', 15.0, 'S/M', 'depop'), ('lst_011', 'Low-Rise Cargo Pants — Khaki', 27.0, 'W29', 'poshmark'), ('lst_012', 'Oversized Crewneck Sweatshirt — Vintage Navy', 20.0, 'XL (fits oversized)', 'thredUp')]
+
+$ python -c "from tools import search_listings; print(search_listings('designer ballgown', size='XXS', max_price=5))"
+[]
+```
+
+(I printed a few fields instead of the whole dicts because the full thing is a wall of text. The cargo pants and the sweatshirt are in there because "graphic" or "tee" shows up somewhere in their descriptions, they're low scores so they end up at the bottom.)
+
+suggest_outfit, with the example wardrobe and then the empty one:
 
 ```
-$ python -c "from tools import suggest_outfit; ..."
+$ python -c "from tools import suggest_outfit; from utils.data_loader import get_example_wardrobe, load_listings; print(suggest_outfit(load_listings()[5], get_example_wardrobe()))"
+Outfit 1: Graphic Tee paired with baggy straight-leg jeans, brown leather belt, and black combat boots.
+Outfit 2: Graphic Tee layered under vintage black denim jacket with wide-leg khaki trousers and chunky white sneakers.
 
+$ python -c "from tools import suggest_outfit; from utils.data_loader import get_empty_wardrobe, load_listings; print(suggest_outfit(load_listings()[5], get_empty_wardrobe()))"
+Outfit 1: Pair it with high-waisted light wash mom jeans, chunky black platform boots, and a silver chain necklace.
+Outfit 2: Layer it over a long-sleeve black mesh top with a plaid midi skirt, worn Converse sneakers, and a beanie.
 ```
 
-```
-$ python -c "from tools import create_fit_card; ..."
+create_fit_card, run three times with the cache off (`AI201_CACHE=0`) so I'd see if it was actually varying, then the empty outfit case:
 
+```
+$ AI201_CACHE=0 python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('baggy dark wash jeans, black combat boots and the black denim jacket', load_listings()[5]))"
+That 2003 tour bootleg graphic tee looks so good with baggy dark wash jeans. Snagged this gem on depop for just $24. Total win for today's fit. 🖤🎸 #thriftfinds #streetwear #depopstyle
+
+(2nd run)
+That 2003 tour bootleg graphic tee looks so good with baggy dark wash jeans. Got it on depop for just $24. Total win for today's fit. 🖤
+
+#vintage #streetwear #depopfinds
+
+(3rd run)
+This 2003 tour bootleg tee is way too good. Snagged it on depop for just $24. Paired it with baggy dark wash jeans for today's fit. 🖤
+
+#depopfinds #streetwear #thrifted
+
+$ python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('   ', load_listings()[5]))"
+Can't make a fit card yet - there's no outfit to build it from.
 ```
 
 ---
