@@ -17,8 +17,19 @@ import re
 
 import config
 import trace
-from tools import search_listings, suggest_outfit, create_fit_card
+from tools import suggest_outfit, create_fit_card
 from generate import ModelUnavailable
+from mcp_client import call_tool
+
+
+def _search(description, size, max_price) -> list[dict]:
+    """search_listings, but through the MCP server instead of a direct call.
+    Every search in the agent goes through here (unit 4, Milestone 1)."""
+    return call_tool("search_listings", {
+        "description": description,
+        "size": size,
+        "max_price": max_price,
+    })
 
 
 # ── session state ─────────────────────────────────────────────────────────────
@@ -111,7 +122,7 @@ def _no_results_message(parsed: dict, session: dict) -> str:
         )
 
     def relaxed(size_, price_):
-        results = search_listings(desc, size=size_, max_price=price_)
+        results = _search(desc, size_, price_)
         session["tool_calls"].append({
             "tool": "search_listings",
             "inputs": {"description": desc, "size": size_, "max_price": price_},
@@ -238,10 +249,10 @@ def run_agent(query: str, wardrobe: dict) -> dict:
 
         elif next_step == "search":
             parsed = session["parsed"]
-            results = search_listings(
+            results = _search(
                 parsed["description"],
-                size=parsed["size"],
-                max_price=parsed["max_price"],
+                parsed["size"],
+                parsed["max_price"],
             )
             session["search_results"] = results
             session["tool_calls"].append({

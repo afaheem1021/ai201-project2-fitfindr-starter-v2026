@@ -309,12 +309,9 @@ that produced it:
 
 ```
 
-**On the MCP move:** <!-- what changed in your code, and whether anything
-behaved differently afterwards. If the rewire didn't work, say exactly where it
-broke — the error text and the last thing that worked. That earns the point in
-full. -->
+**On the MCP move:** I moved `search_listings` since it's the one that doesn't call the model. In `mcp_server.py` I registered it with `@mcp.tool()` and wrote the description for someone who can't see my code (units on max_price, how size matching works, and that it returns `[]` when nothing matches). `python mcp_client.py` lists it with `description: string`, `size: string (optional)`, `max_price: number (optional)`, which matches my Tool Inventory. In `agent.py` I added a little `_search()` helper that calls `call_tool("search_listings", {...})` and swapped every search in `run_agent` over to it, including the extra searches the empty branch does to figure out which filter killed the results.
 
-
+Did anything behave differently? Not that I could find. I ran `'graphic tee'` under $30 both ways and the MCP version gave back the exact same 7 listing dicts in the same order (`a == b` was True), and the empty search came back as a real `[]`, not a string or None, so the branch still works. The only difference is speed: each call starts the server up, which is about 0.25s, so the ballgown query (2 searches) takes about half a second now instead of being instant.
 
 ---
 
