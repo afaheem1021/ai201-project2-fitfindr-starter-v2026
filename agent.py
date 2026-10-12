@@ -304,7 +304,8 @@ def run_agent(query: str, wardrobe: dict) -> dict:
             else:
                 session["selected_item"] = session["search_results"][0]
                 trace.step("search_listings (via MCP)", inputs=str(parsed), returned=results,
-                           note=f"branch: {len(results)} results, selected_item = "
+                           note=f"branch: {len(results)} results (prices ${min(r['price'] for r in results):g}"
+                                f"-${max(r['price'] for r in results):g}), selected_item = "
                                 f"{session['selected_item']['id']}, going to suggest_outfit")
                 next_step = "outfit"
 

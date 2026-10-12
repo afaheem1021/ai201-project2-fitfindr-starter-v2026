@@ -227,28 +227,99 @@ One smaller thing: the first version of `suggest_outfit` came back with "Hey bab
 
 ## Run Log — Before
 
-<!-- Five criteria, five tries each, in this exact format.
+Ran with `python run_eval.py --label before`: every scenario in `scenarios.py` 5 times, cache off, temperature 0.9. 91 real model calls, nothing served from cache, no crashes. The full log is [results/run_2026-10-11_2209_before.md](results/run_2026-10-11_2209_before.md).
 
-     Five, because your criteria are written out of five. Mark each try PASS
-     or FAIL, count the passes, and read that count against your target — a
-     row targeting 4 of 5 with three PASS cells is MISSED (3/5).
-
-     `python run_eval.py --label before` runs everything and writes the table
-     into results/. Paste it here and fill in the verdicts. -->
+`run_eval.py` leaves PASS/FAIL blank, so I wrote [check_run.py](check_run.py) to apply each criterion the way it's worded in `criteria.md` and print the reason for every try (`python check_run.py results/run_2026-10-11_2209_before.md`). I didn't want to eyeball 50 tries and miss something, but I also read every fit card and outfit myself, which is how I found the stuff in the diagnoses section.
 
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. Matching query completes all three tools and returns a fit card | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. Impossible query stops before suggest_outfit, message names what to change | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. Same item id in search_results[0], selected_item, suggest_outfit and create_fit_card | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. Fit card has exact price + platform and is 280 chars or less (and the 5 don't all open the same) | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. Price ceiling parsed right and respected, 5 phrasings | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
 
-**Real output from one try**, pasted as text, naming the file and function
-that produced it:
+Notes on how I read the table:
+- **Criterion 5** is written as one try per phrasing, so Try 1-5 are `'graphic tee under $30'`, `'denim jacket below 50'`, `'cardigan max $40'`, `'platform sneakers less than $60'`, `'band tee $20 or less'`. `run_eval` actually ran each phrasing 5 times (25 runs) and all 25 passed, the parsed max_price and the price range were identical every time, which makes sense since no model is involved in that part.
+- **Criterion 4**: all 5 cards had `$42` and `poshmark`, lengths were 222, 188, 201, 178, 171. The first 5 words were different on all 5 (`this cropped light wash denim`, `cropped light wash denim is`, `that light wash cropped denim`, `the wash on this cropped`, `double denim is back with`).
+- The empty wardrobe scenario isn't one of my five, but it completed 5/5 with general advice and the "you don't have any wardrobe items saved" line every time.
 
+**Real output from one try of each**, all produced by `agent.py::run_agent` (through `run_eval.py::run_once`), copied out of the run log:
+
+Criterion 1, try 1 (`'vintage graphic tee under $30'`):
+```
+[1] parse_query
+      in:  vintage graphic tee under $30
+      out: {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
+[2] search_listings (via MCP)
+      in:  {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
+      out: 10 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Vintage Band Tee — Faded Grey … +7 more
+      →    branch: 10 results (prices $12-$30), selected_item = lst_002, going to suggest_outfit
+[3] suggest_outfit
+      in:  new_item=lst_002 (Y2K Baby Tee — Butterfly Print), wardrobe=10 items
+      out: Outfit 1: Y2K Baby Tee — Butterfly Print paired with Baggy straight-leg jeans, dark wash, Vintage black denim …
+[4] create_fit_card
+      in:  new_item=lst_002, outfit=<from suggest_outfit>
+      out: Threw on this butterfly tee with baggy dark denim and chunky white sneakers for the ultimate Y2K fit. Snagged …
+      →    done
+
+Fit card: Threw on this butterfly tee with baggy dark denim and chunky white sneakers for the ultimate Y2K fit. Snagged it on depop for just $18! 🦋✨ #y2kstyle #depopfinds #streetwear
 ```
 
+Criterion 2, try 1 (`'designer ballgown size XXS under $5'`):
+```
+[1] parse_query
+      in:  designer ballgown size XXS under $5
+      out: {'description': 'designer ballgown', 'size': 'XXS', 'max_price': 5.0}
+[2] search_listings (via MCP)
+      in:  {'description': 'designer ballgown', 'size': 'XXS', 'max_price': 5.0}
+      out: [] (empty)
+      →    branch: empty, working out what to tell the user, then stopping
+[3] search_listings (via MCP)
+      in:  {'description': 'designer ballgown', 'size': None, 'max_price': None}
+      out: [] (empty)
+      →    re-search with a filter dropped, to see which one emptied it
+[4] stop
+      out: Nothing in the listings matches 'designer ballgown' in size XXS under $5, and nothing matches 'designer ballgo…
+      →    suggest_outfit never called
+
+session["error"]: Nothing in the listings matches 'designer ballgown' in size XXS under $5, and nothing matches 'designer ballgown' even with no size or price limit, so it's the words. Try naming the type of piece (tee, jacket, jeans, boots, cardigan) or a style (vintage, y2k, grunge, 90s).
+session["fit_card"]: None
+```
+
+Criterion 3, try 1 (`'90s track jacket in size M'`), lst_004 is search_results[0], selected_item, and what both later tools got:
+```
+[1] parse_query
+      in:  90s track jacket in size M
+      out: {'description': '90s track jacket', 'size': 'M', 'max_price': None}
+[2] search_listings (via MCP)
+      in:  {'description': '90s track jacket', 'size': 'M', 'max_price': None}
+      out: 5 items: 90s Track Jacket — Navy/White Stripe, 90s Leather Bomber — Black, 90s Silk Slip Dress — Floral, Midi Length … +2 more
+      →    branch: 5 results (prices $14-$75), selected_item = lst_004, going to suggest_outfit
+[3] suggest_outfit
+      in:  new_item=lst_004 (90s Track Jacket — Navy/White Stripe), wardrobe=10 items
+      out: Outfit 1: Pair the 90s Track Jacket with the white ribbed tank top, baggy straight-leg jeans, and chunky white…
+[4] create_fit_card
+      in:  new_item=lst_004, outfit=<from suggest_outfit>
+      out: That navy and white 90s track jacket was such a steal on poshmark for only $45. Throwing it on with a white ri…
+      →    done
+```
+
+Criterion 4, try 1 (`'denim jacket under $50'`), the card from `tools.py::create_fit_card`:
+```
+This cropped light wash denim jacket was only $42 on poshmark and fits like a dream. Paired it with wide-leg khaki trousers, a white ribbed tank, and combat boots for an easy everyday fit. 🧥✨ #denimstyle #thriftfinds #ootd
+```
+(`check_run.py` said: has $42 + poshmark, 222 chars)
+
+Criterion 5, phrasing 2 (`'denim jacket below 50'`), parse and search steps:
+```
+[1] parse_query
+      in:  denim jacket below 50
+      out: {'description': 'denim jacket', 'size': None, 'max_price': 50.0}
+[2] search_listings (via MCP)
+      in:  {'description': 'denim jacket', 'size': None, 'max_price': 50.0}
+      out: 7 items: Denim Jacket — Light Wash, Cropped, Vintage Levi's 501 Jeans — Medium Wash, 90s Track Jacket — Navy/White Stripe … +4 more
+      →    branch: 7 results (prices $24-$45), selected_item = lst_007, going to suggest_outfit
 ```
 
 ---
