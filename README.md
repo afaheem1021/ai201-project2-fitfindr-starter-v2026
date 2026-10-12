@@ -39,8 +39,7 @@
 
 ## What This Does
 
-<!-- Three or four sentences: what a user asks for, and what they get back. -->
-
+You tell FitFindr what you're hunting for in normal words, like `'vintage graphic tee under $30, size L'`, and it pulls the price and size out of that and searches 40 thrift listings from depop, thredUp and poshmark. It takes the best match and comes up with two outfits for it using stuff already in your closet (or general ideas if your closet is empty). Then it writes a short caption you could actually post with the fit, with the price and where you got it. If nothing matches, it stops there and tells you what to change, like raising your budget to a specific number or dropping the size.
 
 
 ---
@@ -90,6 +89,8 @@
 
 **How the query is parsed:** Regex, in `agent.py::parse_query`. It pulls out a price ("under $30", "below 30", "max $25", "less than $40", "$20 or less") and a size ("size M", "in size 8", "size W30"), then whatever's left over is the description.
 
+**Things I already know are shaky (for next unit):** the search counts any one keyword hit, so `'leather bomber size M under $50'` comes back with a braided leather belt, because the only leather bomber is $75 and the belt matches on "leather" alone (and "One Size" counts as M). And "t-shirt" doesn't find tees because there's no synonym handling.
+
 **What moves through the session:** `query` -> `parsed` (description, size, max_price) -> `search_results` -> `selected_item` -> `outfit_suggestion` -> `fit_card`. On the empty path it's `query` -> `parsed` -> `search_results` (empty) -> `error`, and `selected_item`, `outfit_suggestion` and `fit_card` stay None. I also added `tool_calls`, a list where every tool call logs its name and the id of the item it was given, so I can check later that the item search found is the one the other two tools actually got.
 
 ---
@@ -104,8 +105,44 @@
 **One full query**
 
 ```
-$ python app.py ask '...'
+$ python app.py ask 'vintage graphic tee under $30, size L'
 
+  Found:    Graphic Tee — 2003 Tour Bootleg Style — $24.0 on depop
+
+  Outfit:   Outfit 1: Graphic Tee paired with baggy straight-leg jeans, black combat boots, and black crossbody bag.
+Outfit 2: Graphic Tee paired with wide-leg khaki trousers, vintage black denim jacket, and chunky white sneakers.
+
+  Fit card: Paired this 2003 tour tee with baggy jeans and combat boots. Total steal on depop for just $24. 🎸
+
+#thriftfind #ootd #streetwear
+
+2 model calls this session, 608 prompt + 88 output tokens
+```
+
+And the same thing with a query that can't match, which stops before the model ever gets called:
+
+```
+$ python app.py ask 'designer ballgown size XXS under $5'
+
+  Nothing in the listings matches 'designer ballgown' in size XXS under $5, and nothing matches 'designer ballgown' even with no size or price limit, so it's the words. Try naming the type of piece (tee, jacket, jeans, boots, cardigan) or a style (vintage, y2k, grunge, 90s).
+
+0 model calls this session
+
+$ python app.py ask 'denim jacket size XL'
+
+  I couldn't find 'denim jacket' in size XL. You could drop the size: there's 8 match(es) in other sizes (M, M/L, S, W27).
+
+0 model calls this session
+```
+
+Checking the state (that the item search found is the one the other tools got), from `session["tool_calls"]`:
+
+```
+$ python -c "from agent import run_agent; from utils.data_loader import get_example_wardrobe as w; s=run_agent('vintage graphic tee under \$30, size L', w()); print(s['search_results'][0]['id'], s['selected_item']['id']); [print(c) for c in s['tool_calls']]"
+lst_006 lst_006
+{'tool': 'search_listings', 'inputs': {'description': 'vintage graphic tee', 'size': 'L', 'max_price': 30.0}, 'result_count': 5}
+{'tool': 'suggest_outfit', 'item_id': 'lst_006', 'wardrobe_size': 10}
+{'tool': 'create_fit_card', 'item_id': 'lst_006'}
 ```
 
 **The three tools, tested one at a time**
@@ -165,17 +202,21 @@ Can't make a fit card yet - there's no outfit to build it from.
      "I gave Claude my search_listings spec. It returned None on no match
      instead of an empty list, so I changed it" is the level we want. -->
 
+I used Claude for this project, mostly to write the first drafts of the tools and the loop from my spec, and then I ran everything myself and fixed what didn't look right.
+
 **Moment 1**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I gave Claude my `create_fit_card` spec (2-4 sentences, mention the price and platform once each, sound like a real post) and had it write the prompt. Then I ran it three times on the same graphic tee with `AI201_CACHE=0` so the cache couldn't fake the variety.
+- *What came back:* Three different captions, but all three opened with "Scored this 2003 tour bootleg tee on depop for just $24" and the second half was basically the same too. They also all had `#depop` as a hashtag, so the platform showed up twice even though the spec says once.
+- *What I changed:* I added two rules to the prompt: don't hashtag the platform, and don't open with "Scored", "Just thrifted" or "Obsessed", start with something about the piece instead. After that the openings changed ("That 2003 tour bootleg graphic tee looks so good...", "This 2003 tour bootleg tee is way too good...") and depop only showed up once in the sentence. They're still kind of similar to each other honestly, which is exactly what criterion 4 is going to test next unit.
 
 **Moment 2**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* For the empty-search message I didn't want to just trust that it was good, so I did what Milestone 5 says and pasted my ballgown message into the model with the "I know nothing about how the app works, tell me what I would try next" prompt.
+- *What came back:* It said it would try a broader item type from the examples in the message (tee, jacket, jeans) or a style word (vintage, y2k, 90s). So the message was doing its job for that case. But when I tried `'graphic tee size XS under $10'` myself, the message just said "loosen both the size and the price" which doesn't really tell you how much.
+- *What I changed:* For that case (where dropping either filter alone still finds nothing) I made the message name the closest real listing, so now it says "the closest thing is the Graphic Tee — 2003 Tour Bootleg Style in size L for $24." I also had the loop re-run the search with each filter dropped so it can say which one killed it, instead of a generic "no results".
+
+One smaller thing: the first version of `suggest_outfit` came back with "Hey babe! That butterfly baby tee is a total thrift score..." before the actual outfits. Fun but not what I asked for, so I added "Reply with only those two lines, no intro" to both versions of the prompt.
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
