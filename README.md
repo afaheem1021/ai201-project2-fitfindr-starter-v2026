@@ -13,8 +13,8 @@
 > python app.py ask 'vintage graphic tee under $30'
 > ```
 >
-> All three tools are stubs, so that last command will do nothing useful yet.
-> That's the starting position.
+> All three tools and the loop are built now, so that last command finds a
+> listing, suggests outfits and writes a fit card.
 >
 > **The rest of this file is your submission.** Fill it in as you go.
 
