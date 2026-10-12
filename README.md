@@ -59,47 +59,38 @@
 
 ### `search_listings`
 
-- **What it does:**
-- **Inputs:** <!-- name and type each: `max_price` (float), not "a price" -->
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Looks through `data/listings.json` and returns the listings that match the user's keywords, filtered by size and price if they gave one, best match first.
+- **Inputs:** `description` (str) - the keywords, like "vintage graphic tee". `size` (str or None) - a size like "M", "8" or "W30", None means don't filter on size. `max_price` (float or None) - the price ceiling, inclusive, None means no ceiling.
+- **Returns:** A `list[dict]` of listing dicts, sorted by keyword score highest first, at most `config.SEARCH_RESULT_LIMIT` (10). Each dict is the full listing straight from the data: `id`, `title`, `description`, `category`, `style_tags`, `size`, `condition`, `price` (float), `colors`, `brand` (can be None), `platform`.
+  - Size match rule: I split the listing's size into tokens on `/`, spaces and parentheses, and the size has to equal one of those tokens. So "M" matches `M`, `S/M` and `M/L` but not `XL`. A number like "8" matches `US 8` but not `US 8.5`, and "30" or "W30" both match `W30 L30`. Listings that say "One Size" count as a match for any letter size (S, M, L...) but not for a shoe or waist size.
+  - Score: a keyword hit in the title or style tags is worth 2, a hit in the description, colors or category is worth 1. Filler words ("looking", "for", "a", "the"...) are dropped before scoring.
+- **When it has nothing:** An empty list `[]`. Never None and never an exception.
 
 ### `suggest_outfit`
 
-- **What it does:**
-- **Inputs:**
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Asks the model for one or two outfits built around the new item, using pieces the user already owns.
+- **Inputs:** `new_item` (dict) - one listing dict, the same shape search returns. `wardrobe` (dict) - `{"items": [...]}` where each item has `name`, `category`, `colors`, `style_tags`, `notes`.
+- **Returns:** A non-empty `str` of outfit ideas (plain text, a few short lines). With a real wardrobe it names actual pieces from the wardrobe by name.
+- **When it has nothing:** If `wardrobe["items"]` is empty it does NOT fail, it asks the model for general styling advice for the item instead (what kinds of pieces go with it) and returns that string. If `new_item` is empty or None it returns an empty string `""` so the caller can tell nothing happened.
 
 ### `create_fit_card`
 
-- **What it does:**
-- **Inputs:**
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Writes a short, casual caption about the find, the kind of thing someone would actually post on Instagram or TikTok.
+- **Inputs:** `outfit` (str) - what suggest_outfit returned. `new_item` (dict) - the listing dict for the item.
+- **Returns:** A `str` caption, 2 to 4 sentences, that mentions the item, its price (like "$24") and the platform (like "depop") once each.
+- **When it has nothing:** If `outfit` is empty or only whitespace it doesn't call the model, it returns the string `"Can't make a fit card yet - there's no outfit to build it from."`
 
 ---
 
 ## Planning Loop
 
-<!-- Your branch rule, stated as a rule — the condition AND both paths — plus
-     the file and function that holds it.
-
-     Like this:
-       "If search_listings returns an empty list, put a message in the session
-        and stop. Otherwise take the first result and go to suggest_outfit."
-        — agent.py::run_agent
-
-     The grader checks your code against what you claim here, so the file and
-     function have to be real. -->
-
-**Branch rule:**
+**Branch rule:** If `search_listings` returns an empty list, I put a message in `session["error"]` that says what to change and stop, `suggest_outfit` never gets called. To make the message useful, before stopping the loop re-runs the search with the size dropped and then with the price dropped, so it can tell the user which filter killed it ("there's 3 matches if you go up to $45" vs "nothing matches those words at all, try different ones"). Otherwise (the list is not empty), take the first result as `session["selected_item"]` and go on to `suggest_outfit`, then `create_fit_card`.
 
 **Where it lives:** `agent.py::run_agent`
 
-**How the query is parsed:** <!-- regex, string splitting, or asking the model — say which -->
+**How the query is parsed:** Regex, in `agent.py::parse_query`. It pulls out a price ("under $30", "below 30", "max $25", "less than $40", "$20 or less") and a size ("size M", "in size 8", "size W30"), then whatever's left over is the description.
 
-**What moves through the session:** <!-- which fields, in what order -->
+**What moves through the session:** `query` -> `parsed` (description, size, max_price) -> `search_results` -> `selected_item` -> `outfit_suggestion` -> `fit_card`. On the empty path it's `query` -> `parsed` -> `search_results` (empty) -> `error`, and `selected_item`, `outfit_suggestion` and `fit_card` stay None. I also added `tool_calls`, a list where every tool call logs its name and the id of the item it was given, so I can check later that the item search found is the one the other two tools actually got.
 
 ---
 
